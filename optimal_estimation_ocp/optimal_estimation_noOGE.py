@@ -9,14 +9,14 @@ import os
 import sys
 import matplotlib.pyplot as plt
 
-sys.path.insert(1, '/home/lim/Documents/Stage_Mathilde/Mathidle_Andre/Andre_bioptim_gravity_optimization/BiorbdOptim-gravity_optimization/examples/optimal_gravity_ocp/')
+sys.path.insert(1, '/home/mickaelbegon/Documents/Stage_Mathilde/programation/optimal_estimation_andre/optimal_gravity_ocp/')
 from load_data_filename import load_data_filename
 from x_bounds import x_bounds
 from adjust_number_shooting_points import adjust_number_shooting_points
 from reorder_markers import reorder_markers
 from adjust_Kalman import shift_by_2pi
 
-sys.path.insert(1, '/home/lim/Documents/Stage_Mathilde/Mathidle_Andre/Andre_bioptim_gravity_optimization/BiorbdOptim-gravity_optimization/')
+sys.path.insert(1, '/home/mickaelbegon/Documents/Stage_Mathilde/programation/Andre_bioptim_gravity_optimization/BiorbdOptim-gravity_optimization/')
 from biorbd_optim import (
     OptimalControlProgram,
     ObjectiveList,
@@ -259,7 +259,7 @@ def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q
         objective_functions,
         # constraints,
         nb_integration_steps=4,
-        nb_threads=8,
+        nb_threads=32,
     )
 
 
@@ -291,7 +291,7 @@ if __name__ == "__main__":
         if trial in trial_needing_min_torque_diff[subject]:
             min_torque_diff = True
 
-    data_path = '/home/lim/Documents/Stage_Mathilde/Mathidle_Andre/OptimalEstimation/Andre_data/'
+    data_path = '/home/mickaelbegon/Documents/Stage_Mathilde/programation/optimal_estimation_andre/OptimalEstimation/Andre_data/'
     model_path = data_path + 'Model/'
     c3d_path = data_path + 'Essai/'
     kalman_path = data_path + 'Q/'
@@ -348,7 +348,7 @@ if __name__ == "__main__":
     markers_rotated = markers_reordered
 
     if GENERATE_GRAPHS:
-        figure_save_path =  "/home/lim/Documents/Stage_Mathilde/Mathidle_Andre/OptimalEstimation/figures/Figures_vieuxCodesAndre/"
+        figure_save_path =  "/home/mickaelbegon/Documents/Stage_Mathilde/programation/optimal_estimation_andre/OptimalEstimation/figures/Figures_vieuxCodesAndre/"
         plot_markers_diff(biorbd_model, markers_reordered, q_ref, figure_save_path + os.path.splitext(c3d_name)[0] + "_Kalman")
 
     save_path = 'Solutions/'
