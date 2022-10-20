@@ -1,4 +1,4 @@
-import biorbd
+import biorbd_casadi as biorbd
 import numpy as np
 import ezc3d
 from scipy.io import loadmat
@@ -25,6 +25,7 @@ from bioptim import (
     DynamicsList,
     DynamicsFcn,
     BoundsList,
+    Node,
     Bounds,
     InitialGuessList,
     InitialGuess,
@@ -195,9 +196,9 @@ def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q
     # Add objective functions
     state_ref = np.concatenate((q_init, qdot_init))
     objective_functions = ObjectiveList()
-    objective_functions.add(ObjectiveFcn.Lagrange.TRACK_MARKERS, weight=1, target=markers_ref)
-    objective_functions.add(ObjectiveFcn.Lagrange.MINIMIZE_STATE, weight=1e-5, target=state_ref)
-    objective_functions.add(ObjectiveFcn.Lagrange.MINIMIZE_STATE, weight=1e-5, index=range(6, n_q))
+    objective_functions.add(ObjectiveFcn.Lagrange.TRACK_MARKERS, weight=1, target=markers_ref[:, :, :-1])
+    objective_functions.add(ObjectiveFcn.Lagrange.MINIMIZE_STATE, weight=1e-5, key="q")
+    objective_functions.add(ObjectiveFcn.Lagrange.MINIMIZE_STATE, weight=1e-5, index=range(6, n_q), key="q")
     control_weight_segments = [0   , 0   , 0   ,  # pelvis trans
                                0   , 0   , 0   ,  # pelvis rot
                                1e-7, 1e-7, 1e-6,  # thorax
@@ -218,10 +219,13 @@ def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q
                                1e-4, 1e-3,        # left foot
                                ]
     for idx in range(n_tau):
-      objective_functions.add(ObjectiveFcn.Lagrange.TRACK_TORQUE, weight=control_weight_segments[idx], target=tau_init, index=idx)
-      objective_functions.add(ObjectiveFcn.Lagrange.MINIMIZE_TORQUE, weight=control_weight_segments[idx], index=idx)
+      objective_functions.add(ObjectiveFcn.Lagrange.TRACK_CONTROL, weight=control_weight_segments[idx],
+                              target=tau_init[idx, :], index=idx, key="tau", node=Node.ALL_SHOOTING)
+      objective_functions.add(ObjectiveFcn.Lagrange.TRACK_CONTROL, weight=control_weight_segments[idx],
+                              index=idx, key="tau", target=tau_init[idx, :])
     if min_torque_diff:
-        objective_functions.add(ObjectiveFcn.Lagrange.MINIMIZE_TORQUE_DERIVATIVE, weight=1e-5)
+        objective_functions.add(ObjectiveFcn.Lagrange.TRACK_CONTROL, derivative=True, weight=1e-5,
+                                target=tau_init[idx, :])
 
     # Dynamics
     dynamics = DynamicsList()
@@ -264,7 +268,7 @@ def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q
 
 if __name__ == "__main__":
 
-    bioptim_version_name = "_biorbd150_1avriil2021"
+    bioptim_version_name = "_biorbd174_23juillet2021"
 
     GENERATE_OPTIM = True  # False #
     GENERATE_GRAPHS = False # True #
