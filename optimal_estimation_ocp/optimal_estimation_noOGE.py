@@ -1,4 +1,4 @@
-import biorbd_casadi as biorbd
+import biorbd ##_casadi as biorbd
 import numpy as np
 import ezc3d
 from scipy.io import loadmat
@@ -18,17 +18,23 @@ from adjust_Kalman import shift_by_2pi
 
 # sys.path.insert(1, '/home/mickaelbegon/Documents/Stage_Mathilde/programation/Andre_bioptim_gravity_optimization/BiorbdOptim-gravity_optimization/')
 sys.path.insert(1, '/home/mickaelbegon/Documents/Stage_Mathilde/programation/bioptim/')
+# sys.path.insert(1, '/home/mickaelbegon/miniconda3/envs/25_11_2020/lib/python3.8/site-packages/bioptim/__init__.py')
 from bioptim import (
     OptimalControlProgram,
     ObjectiveList,
-    ObjectiveFcn,
-    DynamicsList,
-    DynamicsFcn,
+    ObjectiveFunction as ObjectiveFcn,
+    Objective,
+    DynamicsTypeList as DynamicsList,
+    DynamicsFunctions as DynamicsFcn,
+    DynamicsType,
+    DynamicsTypeOption,
+    BoundsOption,
     BoundsList,
-    Node,
     Bounds,
+    Node,
     InitialGuessList,
     InitialGuess,
+    InitialGuessOption,
     InterpolationType,
     Solver,
     QAndQDotBounds,
@@ -187,7 +193,9 @@ def inverse_dynamics(biorbd_model, q_ref, qd_ref, qdd_ref):
     return id(q_ref, qd_ref, qdd_ref)[:, :-1]
 
 
-def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q_init, qdot_init, tau_init, xmin, xmax, min_torque_diff=False):
+def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q_init, qdot_init, tau_init, xmin, xmax, min_torque_diff=False
+                ):
+
     # --- Options --- #
     torque_min, torque_max = -300, 300
     n_q = biorbd_model.nbQ()
@@ -196,9 +204,8 @@ def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q
     # Add objective functions
     state_ref = np.concatenate((q_init, qdot_init))
     objective_functions = ObjectiveList()
-    objective_functions.add(ObjectiveFcn.Lagrange.TRACK_MARKERS, weight=1, target=markers_ref[:, :, :-1])
-    objective_functions.add(ObjectiveFcn.Lagrange.MINIMIZE_STATE, weight=1e-5, key="q")
-    objective_functions.add(ObjectiveFcn.Lagrange.MINIMIZE_STATE, weight=1e-5, index=range(6, n_q), key="q")
+    objective_functions.add(Objective.Lagrange.TRACK_MARKERS, weight=1, target=markers_ref[:, :, :])
+    objective_functions.add(Objective.Lagrange.MINIMIZE_STATE, weight=1e-5, index=range(6, n_q))
     control_weight_segments = [0   , 0   , 0   ,  # pelvis trans
                                0   , 0   , 0   ,  # pelvis rot
                                1e-7, 1e-7, 1e-6,  # thorax
@@ -219,38 +226,38 @@ def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q
                                1e-4, 1e-3,        # left foot
                                ]
     for idx in range(n_tau):
-      objective_functions.add(ObjectiveFcn.Lagrange.TRACK_CONTROL, weight=control_weight_segments[idx],
-                              target=tau_init[idx, :], index=idx, key="tau", node=Node.ALL_SHOOTING)
-      objective_functions.add(ObjectiveFcn.Lagrange.TRACK_CONTROL, weight=control_weight_segments[idx],
-                              index=idx, key="tau", target=tau_init[idx, :])
+        # Torque derivative not existant at this point in time yet :(
+        # objective_functions.add(Objective.Lagrange.TRACK_ALL_CONTROLS, weight=control_weight_segments[idx],
+        #                         index=idx, target=np.reshape(tau_init[idx, :], (len(tau_init[idx, :]), 1)))
+        for j in range(number_shooting_points):
+            a_target = np.zeros((1, 1))
+            a_target[0] = tau_init[idx, j]
+            objective_functions.add(Objective.Mayer.TRACK_ALL_CONTROLS, weight=control_weight_segments[idx],
+                                    index=idx, target=a_target, node=j)
+
+
     if min_torque_diff:
-        objective_functions.add(ObjectiveFcn.Lagrange.TRACK_CONTROL, derivative=True, weight=1e-5,
-                                target=tau_init[idx, :])
+        objective_functions.add(Objective.Lagrange.TRACK_ALL_CONTROLS, derivative=True, weight=1e-5)
 
     # Dynamics
-    dynamics = DynamicsList()
-    dynamics.add(DynamicsFcn.TORQUE_DRIVEN)
+    dynamics = DynamicsTypeOption(DynamicsType.TORQUE_DRIVEN)
 
     # Path constraint
     # X_bounds = BoundsList()
-    # X_bounds.add(Bounds(xmin, xmax))
-    X_bounds = QAndQDotBounds(biorbd_model)
+    X_bounds = BoundsOption(Bounds(xmin, xmax))
 
     # Initial guess
-    X_init = InitialGuessList()
-    # q_init = np.zeros(q_init.shape)
-    # qdot_init = np.zeros(qdot_init.shape)
-    X_init.add(np.concatenate([q_init, qdot_init]), interpolation=InterpolationType.EACH_FRAME)
+    # X_init = InitialGuessList()
+    X_init = InitialGuessOption(np.concatenate([q_init, qdot_init]), interpolation=InterpolationType.EACH_FRAME)
 
     # Define control path constraint
     # U_bounds = BoundsList()
-    U_bounds = Bounds(min_bound=[torque_min] * n_tau, max_bound=[torque_max] * n_tau, interpolation=InterpolationType.CONSTANT)
+    U_bounds = BoundsOption([[torque_min] * n_tau, [torque_max] * n_tau])
     U_bounds.min[:6, :] = 0
     U_bounds.max[:6, :] = 0
 
-    U_init = InitialGuessList()
-    tau_init = np.zeros(tau_init.shape)
-    U_init.add(tau_init, interpolation=InterpolationType.EACH_FRAME)
+    # U_init = InitialGuessList()
+    U_init = InitialGuessOption(tau_init, interpolation=InterpolationType.EACH_FRAME)
 
     return OptimalControlProgram(
         biorbd_model,
@@ -261,14 +268,14 @@ def prepare_ocp(biorbd_model, final_time, number_shooting_points, markers_ref, q
         U_init,
         X_bounds,
         U_bounds,
-        objective_functions,
-        n_threads=32,
+        objective_functions=objective_functions,
+        # nb_threads=32,
     )
 
 
 if __name__ == "__main__":
 
-    bioptim_version_name = "_biorbd174_23juillet2021"
+    bioptim_version_name = "_biorbd144_25novembre_2020"
 
     GENERATE_OPTIM = True  # False #
     GENERATE_GRAPHS = False # True #
@@ -312,7 +319,7 @@ if __name__ == "__main__":
     biorbd_model = biorbd.Model(model_path + model_name)
     c3d = ezc3d.c3d(c3d_path + c3d_name)
 
-    biorbd_model.setGravity(biorbd.Vector3d(0, 0, -9.80639))
+    # biorbd_model.setGravity(biorbd.Vector3d(0, 0, -9.80639))
 
     # --- Adjust number of shooting points --- #
     adjusted_number_shooting_points, step_size = adjust_number_shooting_points(number_shooting_points, frames)
@@ -370,15 +377,24 @@ if __name__ == "__main__":
 
         # --- Solve the program --- #
         start = time.time()
-        options = {"max_iter": 3000, "tol": 1e-4, "constr_viol_tol": 1e-2, "linear_solver": "ma57"}
-        sol = ocp.solve(solver=Solver.IPOPT, solver_options=options, show_online_optim=False)
+        options = {"ipopt.max_iter": 15, "ipopt.linear_solver": "ma57"}  # "ipopt.tol": 1e-4,  # "constr_viol_tol": 1e-2  # 300
+
+        sol = ocp.solve(solver=Solver.IPOPT, show_online_optim=False)  # ,solver_options=options
         stop = time.time()
         print('Number of shooting points: ', adjusted_number_shooting_points)
         print(stop - start)
 
+        # solv = Solver.IPOPT(show_online_optim=False)
+        # solv.set_maximum_iterations(1)
+        # solv.set_linear_solver("ma57")
+        # tic = time.time()
+        # print('Number of shooting points: ', adjusted_number_shooting_points)
+        # print(stop - start)
+        # sol = ocp.solve(solv)
+
         # --- Get the results --- #
-        states = sol.states
-        controls = sol.controls
+        # states = sol.states
+        # controls = sol.controls
 
         # --- Save --- #
         ocp.save(sol, save_name + ".bo")
@@ -388,7 +404,7 @@ if __name__ == "__main__":
 
         with open(save_variables_name, 'wb') as handle:
             pickle.dump({'mocap': markers_rotated, 'duration': duration, 'frames': frames, 'step_size': step_size,
-                         'states': states, 'controls': controls, 'gravity': gravity},
+                         'states': sol['x'], 'controls': sol['x'], 'gravity': gravity},  # states = kalman_states ou sol.x =  # controles = tau_ref ou sol.g #  gravity = save_name
                         handle, protocol=3)
 
     else:
